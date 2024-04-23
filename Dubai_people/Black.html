@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Researcher-Project Network Graph</title>
+    <script src="https://d3js.org/d3.v5.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/canvg/1.5/canvg.min.js"></script>
+    <!-- Include Google Fonts link for Instrument Sans -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;700&display=swap">
+    <style>
+        body {
+            background-color: black;
+            color: white;
+            margin: 0;
+            padding: 0;
+            font-family: 'Instrument Sans', sans-serif; /* Use Instrument Sans font */
+            position: relative;
+        }
+        .researcher {
+            stroke-width: 1px;
+            fill: none;
+            opacity: 0.7;
+        }
+        .project {
+            fill: darkgrey;
+            stroke: #000;
+            stroke-width: 1px;
+            opacity: 0.9;
+        }
+        .link {
+            fill: none;
+            stroke: grey;
+            stroke-opacity: 0.6;
+        }
+        .label {
+            font-size: 10px;
+            fill: white;
+            pointer-events: none;
+            text-anchor: middle;
+        }
+        .export-button {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background-color: transparent;
+            border: 2px solid white;
+            color: white;
+            padding: 10px 20px;
+            cursor: pointer;
+            border-radius: 20px;
+            outline: none;
+        }
+        .export-button:hover {
+            background-color: white;
+            color: black;
+        }
+    </style>
+</head>
+<body>
+    <script>
+        var svg = d3.select("body").append("svg")
+            .attr("width", 1200) // Expanded width
+            .attr("height", 600);
+
+        var simulation = d3.forceSimulation()
+            .force("link", d3.forceLink().id(function(d) { return d.id; }).distance(100))
+            .force("charge", d3.forceManyBody().strength(-200))
+            .force("center", d3.forceCenter(1200 / 2, 600 / 2))
+            .force("collide", d3.forceCollide().radius(20))
+            .force("y", d3.forceY().strength(0.1))
+            .force("x", d3.forceX().strength(0.1));
+
+        var labelForce = d3.forceSimulation()
+            .force("center", d3.forceCenter(1200 / 2, 600 / 2))
+            .force("charge", d3.forceManyBody().strength(-10))
+            .force("collide", d3.forceCollide().radius(12));
+
+        d3.json("data.json").then(function(graph) {
+            var link = svg.append("g")
+                .attr("class", "links")
+                .selectAll("path")
+                .data(graph.links)
+                .enter().append("path")
+                .attr("class", "link");
+
+            var node = svg.append("g")
+                .attr("class", "nodes")
+                .selectAll("circle")
+                .data(graph.nodes)
+                .enter().append("circle")
+                .attr("class", function(d) { return d.type; })
+                .attr("r", function(d) { return d.type === 'researcher' ? 6 : 6; })
+                .attr("stroke", function(d) { return d.city === 'Boston' ? '#93C31E' : 'white'; })
+                .call(d3.drag()
+                    .on("start", dragstarted)
+                    .on("drag", dragged)
+                    .on("end", dragended));
+
+            var label = svg.append("g")
+                .attr("class", "labels")
+                .selectAll("text")
+                .data(graph.nodes)
+                .enter().append("text")
+                .attr("class", "label")
+                .text(function(d) { return d.id; })
+                .style("text-anchor", "middle"); // Center text under dot
+
+            simulation
+                .nodes(graph.nodes)
+                .on("tick", ticked);
+
+            simulation.force("link")
+                .links(graph.links);
+
+            labelForce
+                .nodes(graph.nodes)
+                .on("tick", labelTicked);
+
+            function ticked() {
+                link.attr("d", function(d) {
+                    var dx = d.target.x - d.source.x,
+                        dy = d.target.y - d.source.y,
+                        dr = Math.sqrt(dx * dx + dy * dy);
+                    return "M" + d.source.x + "," + d.source.y +
+                        "A" + dr + "," + dr + " 0 0,1 " + d.target.x + "," + d.target.y;
+                });
+
+                node
+                    .attr("cx", function(d) { return d.x; })
+                    .attr("cy", function(d) { return d.y; });
+            }
+
+            function labelTicked() {
+                label
+                    .attr("x", function(d) { return d.x; })
+                    .attr("y", function(d) { return d.y + (d.type === 'researcher' ? 8 : 14) + 10; }); // Adjust label position with an offset of 10
+            }
+
+            function dragstarted(d) {
+                if (!d3.event.active) simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+            }
+
+            function dragged(d) {
+                d.fx = d3.event.x;
+                d.fy = d3.event.y;
+            }
+
+            function dragended(d) {
+                if (!d3.event.active) simulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+            }
+
+            // Set project nodes fixed at the bottom
+            graph.nodes.filter(function(d) { return d.type === 'project'; }).forEach(function(project, i) {
+                project.fx = 100 + i * 150; // Adjust x position for projects
+                project.fy = 560; // Fixed y position for projects
+            });
+
+            // Export as SVG functionality
+            document.getElementById("export-button").addEventListener("click", function() {
+                var svgString = new XMLSerializer().serializeToString(svg.node());
+                var blob = new Blob([svgString], {type: "image/svg+xml"});
+                var url = window.URL.createObjectURL(blob);
+                var link = document.createElement("a");
+                link.download = "network_graph.svg";
+                link.href = url;
+                link.click();
+                window.URL.revokeObjectURL(url);
+            });
+        });
+    </script>
+    <button id="export-button" class="export-button">Export as SVG</button>
+</body>
+</html>
